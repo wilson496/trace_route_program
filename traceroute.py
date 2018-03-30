@@ -1,6 +1,7 @@
 import sys
 import dpkt
 import socket
+from statistics import mean, variance, stdev
 
 """
 Author: Cameron Wilson
@@ -63,8 +64,8 @@ def main(f):
     #TODO: Be able to read the fragmented header. Its apparently pcap format, but the tcpdump header is invalid
     try:
         pcap = dpkt.pcapng.Reader(f)
-    except ValueError:
-        pcap = dpkt.pcap.Reader(f)
+    # except ValueError:
+    #     pcap = dpkt.pcap.Reader(f)
     except Exception:
         print('Error opening pcap/pcapng file! Please ensure the file used follows either of these formats.')
         sys.exit()
@@ -108,21 +109,25 @@ def main(f):
 
 
     #If this fires, we are dealing with Windows, so filter out the UDP
-    if isinstance(ip_sess.get_list()[0][1].data, dpkt.icmp.ICMP) and ip_sess.get_list()[0][1].ttl == 1:
+    if isinstance(ip_sess.get_list()[0][1].data, dpkt.icmp.ICMP) and ip_sess.get_list()[0][1].ttl == 1 and ip_sess.get_list()[0][1].data.type == 8:
         ip_sess.set_list([packet for packet in ip_sess.get_list() if isinstance(packet[1].data, dpkt.icmp.ICMP)])
         hop_tracker = windows(ip_sess)
-
     else:
         hop_tracker = linux(ip_sess)
 
+
     # Print results of processing the traceroute file
-    print_out(ip_sess, protocol_tracker, hop_tracker)
+    print_out(ip_sess, protocol_tracker, hop_tracker[0], hop_tracker[1])
+
+
+
 
 def windows(ip_sess):
 
     connection_list = []
     hop_tracker = {}
-
+    frag_list = []
+    rtt = []
 
     for packet in ip_sess.get_list():
         ip = packet[1]
@@ -132,13 +137,15 @@ def windows(ip_sess):
         #Check if there are fragments, denoted by the MF (More Fragments) bit being set
         if ip.mf == 1:
             ip_sess.inc_fragment_count()
+            frag_list.append(ip)
 
-        elif ip_sess.get_fragment_count() > 0:
+        if ip_sess.get_fragment_count() > 0:
             #Last fragment
+            #print("OFFSET: {0} | MF: {1}".format(ip.off, ip.mf))
             if ip.mf == 0:
-                ip_sess.set_offset(ip.off)
+                #ip_sess.set_offset(ip.off)
+                ip_sess.set_offset(frag_list[-1].off)
                 ip_sess.inc_fragment_count()
-
         # print(dir(data.data.seq))
         # print(data.type)
         # sys.exit()
@@ -157,13 +164,24 @@ def windows(ip_sess):
 
             for each in list(set(connection_list)):
                 if data.timeexceed.data.icmp.data.seq == each[2]:
-                    hop_tracker[ip.src] = each[2]
+                    rtt_id = (socket.inet_ntoa(ip.src), socket.inet_ntoa(ip.dst))
+                    hop_tracker[ip.src] = ip.ttl #each[2]
+                    rtt.append((rtt_id, packet[0] - each[-1]))
+
 
     hop_tuples = []
     for each in hop_tracker:
         hop_tuples.append((hop_tracker[each], socket.inet_ntoa(each)))
 
-    return sorted(hop_tuples, key=lambda x: x[0])
+    return (sorted(hop_tuples, key=lambda x: x[0]), rtt)
+
+
+
+
+
+
+
+
 
 
 
@@ -172,28 +190,35 @@ def linux(ip_sess):
     connection_list = []
     hop_tracker = {}
     q = ip_sess.get_list()
+    frag_list = []
+    rtt = []
 
     for packet in q:
 
         ip = packet[1]
         data = packet[1].data
 
+        #print(ip.mf)
+        #print(ip.offset)
 
         #Check if there are fragments, denoted by the MF (More Fragments) bit being set
         if ip.mf == 1:
             ip_sess.inc_fragment_count()
+            frag_list.append(ip)
 
-        elif ip_sess.get_fragment_count() > 0:
+        if ip_sess.get_fragment_count() > 0:
             #Last fragment
+            #print("OFFSET: {0} | MF: {1}".format(ip.off, ip.mf))
             if ip.mf == 0:
-                ip_sess.set_offset(ip.off)
+                #ip_sess.set_offset(ip.off)
+                ip_sess.set_offset(frag_list[-1].off)
                 ip_sess.inc_fragment_count()
 
 
         # TODO: Account for the ICMP not containing the ports of either source or destination. However, UDP packets do have source and destination ports
 
         if isinstance(ip.data, dpkt.udp.UDP):
-            connection_id = (ip.src, data.sport, ip.dst, data.dport, ip.ttl)
+            connection_id = (ip.src, data.sport, ip.dst, data.dport, ip.ttl, packet[0])
             connection_list.append(connection_id)
 
         elif isinstance(ip.data, dpkt.icmp.ICMP):
@@ -203,14 +228,14 @@ def linux(ip_sess):
 
                 source_match = ip.data.timeexceed.data.udp.sport
 
-
                 #IDEA: There is a possibility that certain routers added to the list are NOT in the path to the ult dest
-
 
                 #This MAY not work. TTL may be out of order for ips
                 for each in list(set(connection_list)):
                     if source_match == each[1]:
-                        hop_tracker[ip.src] = each[4]
+                        rtt_id = (socket.inet_ntoa(ip.src), socket.inet_ntoa(ip.dst))
+                        hop_tracker[ip.src] = ip.ttl #each[4]
+                        rtt.append((rtt_id, packet[0] - each[-1]))
 
 
             #If the destination is unreachable, you have a ttl long enough to get to the ultimate_destination
@@ -242,10 +267,41 @@ def linux(ip_sess):
     for each in hop_tracker:
         hop_tuples.append((hop_tracker[each], socket.inet_ntoa(each)))
 
-    return sorted(hop_tuples, key=lambda x: x[0])
+    return (sorted(hop_tuples, key=lambda x: x[0]), rtt)
 
 
-def print_out(ip_sess, protocol_tracker, hop_tracker):
+
+
+
+
+
+
+def print_out(ip_sess, protocol_tracker, hop_tracker, rtt_result):
+
+    rtt_dict = {}
+    rtt_mean = {}
+    rtt_stdev = {}
+
+    for each in rtt_result:
+
+        rtt_mean[each[0][0]] = 0
+        rtt_stdev[each[0][0]] = 0
+
+        if not each[0] in rtt_dict:
+            rtt_dict[each[0]] = [each[1]]
+        elif each[0] in rtt_dict:
+            rtt_dict[each[0]].append(each[1])
+
+
+
+    for each in rtt_dict:
+
+        rtt_mean[each[0]] = mean(rtt_dict[each]) * 1000
+
+        #TODO: Fix variance bug. There is an issue where packets are not being added? or that if there is not enough data points, do not calculate variance
+        #rtt_stdev[each[0]] = stdev(rtt_dict[each]) * 1000
+
+
 
     print("The IP address of the source node: " + str(socket.inet_ntoa(ip_sess.get_origin())))
     print("The IP address of the ultimate destination node: " + str(socket.inet_ntoa(ip_sess.get_ult_dest())))
@@ -274,6 +330,10 @@ def print_out(ip_sess, protocol_tracker, hop_tracker):
     For each pairing (i.e. origin to intermediate, to final)
     find the average Round trip time 
     '''
+
+    for each in rtt_mean:
+        print("The avg RRT between {0} and {1} is: {2} ms, the s.d. is: {3} ms".format(socket.inet_ntoa(ip_sess.get_origin()), each, rtt_mean[each], 0))#rtt_stdev[each]))
+
 
 
 if __name__ == "__main__":

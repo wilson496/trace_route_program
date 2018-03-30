@@ -1,0 +1,49 @@
+Requirement 2 (R2)
+
+
+Group 1:
+
+The sequence of routers is inconsistent, with the last two routers
+    Given this, if a router is busy with other tasks, it will not respond as fast as other routers
+    that may have less to do. Thus, this can adversely affect the sequence of routers, as some may respond
+    earlier than others.
+
+
+ - determine the number of probes per “ttl” used in each trace file,
+ - determine whether or not the sequence of intermediate routers is the same in different trace
+   files,
+ - if the sequence of intermediate routers is different in the five trace files, list the difference and
+   explain why,
+ - if the sequence of intermediate routers is the same in the five trace files, draw a table as shown
+   below (warning: the values in the table do not correspond to any trace files) to compare
+   the RRTs of different traceroute attempts. From the result, which hop is likely to incur the
+   maximum delay? Explain your conclusion
+
+
+
+Group 2:
+
+
+
+ - determine the number of probes per “ttl” used in each trace file,
+ - determine whether or not the sequence of intermediate routers is the same in different trace
+   files,
+ - if the sequence of intermediate routers is different in the five trace files, list the difference and
+   explain why,
+ - if the sequence of intermediate routers is the same in the five trace files, draw a table as shown
+   below (warning: the values in the table do not correspond to any trace files) to compare
+   the RRTs of different traceroute attempts. From the result, which hop is likely to incur the
+   maximum delay? Explain your conclusion
+
+
+
+Group 2 has the proper order.
+
+On the other hand, Group 1 does not have the same sequence of routers.
+By examining the probes per ttl for group one, there were differences found in the number of probes/ttl
+
+
+
+
+
+
