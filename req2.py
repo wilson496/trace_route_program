@@ -110,13 +110,18 @@ def main(f):
 
 
     ttl_dict = {}
-
+    ip_list = []
     q = ip_sess.get_list()
+    rtt = []
+    connection_list = []
 
     for ip_packet in q:
 
         ip = ip_packet[1]
         data = ip.data
+
+        if ip.src != ip_sess.get_origin() and ip.src != ip_sess.get_ult_dest() and ip.dst != ip_sess.get_origin() and ip.dst != ip_sess.get_ult_dest():
+            ip_list.append(ip)
 
         if ip.ttl not in ttl_dict:
             ttl_dict[ip.ttl] = 1
@@ -126,9 +131,43 @@ def main(f):
 
     ttl_dict = sorted(ttl_dict.items())
 
-    for key, value in ttl_dict:
-        print("{0} : {1}".format(key, value))
+    # for key, value in ttl_dict:
+    #     print("{0} : {1}".format(key, value))
 
+    # i = 1
+    # for each in ip_list:
+    #     print("{0} : {1}".format(str(i), socket.inet_ntoa(each.src)))
+    #     i +=1
+
+
+
+    for packet in ip_sess.get_list():
+        ip = packet[1]
+        data = packet[1].data
+
+
+
+        #Echo request
+        if data.type == 8:
+            connection_id = (ip.src, ip.dst, data.data.seq, ip.ttl)
+            connection_list.append(connection_id)
+
+        #Echo reply
+        elif data.type == 0:
+            pass
+
+        #TTL exceeded
+        elif data.type == 11:
+
+            for each in connection_list:
+                if data.timeexceed.data.icmp.data.seq == each[2]:
+                    rtt_id = (socket.inet_ntoa(ip.src), socket.inet_ntoa(ip.dst))
+                    p = (rtt_id, packet[0] - each[-1], ip.ttl)
+                    rtt.append(p)
+
+
+    for each in rtt:
+        print(each)
 
 
 if __name__ == "__main__":

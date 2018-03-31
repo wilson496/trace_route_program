@@ -1,7 +1,7 @@
 import sys
 import dpkt
 import socket
-from statistics import mean, variance, stdev
+from statistics import mean, variance, stdev, StatisticsError
 
 """
 Author: Cameron Wilson
@@ -165,7 +165,7 @@ def windows(ip_sess):
             for each in list(set(connection_list)):
                 if data.timeexceed.data.icmp.data.seq == each[2]:
                     rtt_id = (socket.inet_ntoa(ip.src), socket.inet_ntoa(ip.dst))
-                    hop_tracker[ip.src] = ip.ttl #each[2]
+                    hop_tracker[ip.src] = each[2]
                     rtt.append((rtt_id, packet[0] - each[-1]))
 
 
@@ -198,8 +198,7 @@ def linux(ip_sess):
         ip = packet[1]
         data = packet[1].data
 
-        #print(ip.mf)
-        #print(ip.offset)
+
 
         #Check if there are fragments, denoted by the MF (More Fragments) bit being set
         if ip.mf == 1:
@@ -234,7 +233,7 @@ def linux(ip_sess):
                 for each in list(set(connection_list)):
                     if source_match == each[1]:
                         rtt_id = (socket.inet_ntoa(ip.src), socket.inet_ntoa(ip.dst))
-                        hop_tracker[ip.src] = ip.ttl #each[4]
+                        hop_tracker[ip.src] = each[4]
                         rtt.append((rtt_id, packet[0] - each[-1]))
 
 
@@ -258,11 +257,6 @@ def linux(ip_sess):
 
     '''
 
-
-        # print("SOURCE: " + str(socket.inet_ntoa(connection_id[0])) + " | DEST: " + str(socket.inet_ntoa(connection_id[1])) + " | TTL: " + str(ip.ttl))
-        # print('\t | MF:' + str(ip.mf) + " | TYPE: " + str(ip.get_proto(ip.p).__name__))
-
-
     hop_tuples = []
     for each in hop_tracker:
         hop_tuples.append((hop_tracker[each], socket.inet_ntoa(each)))
@@ -270,8 +264,33 @@ def linux(ip_sess):
     return (sorted(hop_tuples, key=lambda x: x[0]), rtt)
 
 
+'''
+TODO:
 
 
+RTT for Origin/UltDest packets
+
+
+List the IP
+address(es) of the intermediate destination node(s). If multiple intermediate destination nodes
+exist, they should be ordered by their hop count to the source node in the increasing order.
+BUG: Too many routers and out of order?
+
+
+How many fragments were created from the original datagram? Note that 0 means no fragmentation. 
+Print out the offset (in terms of bytes) of the last fragment of the fragmented IP
+datagram. Note that if the datagram is not fragmented, the offset is 0.
+BUG: The output for the fragmented file may not be right. Double check. 
+
+
+Calculate the average and standard deviation of round trip time(s) between the source node
+and the intermediate destination node (s) and the average round trip time between the source
+node and the ultimate destination node. The average and standard deviation are calculated
+over all fragments sent/received between the source nodes and the (intermediate/ ultimate)
+destination node
+
+- Get the stats for Source node and ultimate destination node 
+'''
 
 
 
@@ -287,6 +306,7 @@ def print_out(ip_sess, protocol_tracker, hop_tracker, rtt_result):
         rtt_mean[each[0][0]] = 0
         rtt_stdev[each[0][0]] = 0
 
+
         if not each[0] in rtt_dict:
             rtt_dict[each[0]] = [each[1]]
         elif each[0] in rtt_dict:
@@ -299,8 +319,14 @@ def print_out(ip_sess, protocol_tracker, hop_tracker, rtt_result):
         rtt_mean[each[0]] = mean(rtt_dict[each]) * 1000
 
         #TODO: Fix variance bug. There is an issue where packets are not being added? or that if there is not enough data points, do not calculate variance
-        #rtt_stdev[each[0]] = stdev(rtt_dict[each]) * 1000
 
+
+        # print(len(rtt_dict[each]))
+        # sys.exit()
+        if len(rtt_dict[each]) < 2:
+            rtt_stdev[each[0]] = 0
+        else:
+            rtt_stdev[each[0]] = stdev(rtt_dict[each]) * 1000
 
 
     print("The IP address of the source node: " + str(socket.inet_ntoa(ip_sess.get_origin())))
@@ -332,7 +358,7 @@ def print_out(ip_sess, protocol_tracker, hop_tracker, rtt_result):
     '''
 
     for each in rtt_mean:
-        print("The avg RRT between {0} and {1} is: {2} ms, the s.d. is: {3} ms".format(socket.inet_ntoa(ip_sess.get_origin()), each, rtt_mean[each], 0))#rtt_stdev[each]))
+        print("The avg RRT between {0} and {1} is: {2} ms, the s.d. is: {3} ms".format(socket.inet_ntoa(ip_sess.get_origin()), each, rtt_mean[each], rtt_stdev[each]))
 
 
 
